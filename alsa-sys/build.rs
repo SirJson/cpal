@@ -12,19 +12,35 @@ use std::path::{Path, PathBuf};
 * integrate optional LIB and INCLUDE directories without introducing new dependencies to cpal.
 */
 
-/// This script supports setting the directories for alsa manually. 
+/// This script supports setting the directories for alsa manually.
 /// This is especially useful for cross-compiling since we often don't have pkg-config there
-/// 
+///
 /// The following enviroment variables must be set if you don't or cant't use pkg-config
-/// 
+///
 /// ALSA_LIB_DIR => The path to your custom alsa librarie(s)
 /// ALSA_INCLUDE_DIR => The path to your custom alsa includes
-/// 
+///
 /// If you want you can also set ALSA_LIB to control which library or libraries will linked instead of 'asound'
 /// In the case you have more than one library you should put the ':' charcacter between each library
 /// e.g: ALSA_LIBS = asound:asound_ext:asound_unicorn
-/// 
+///
 /// This script also tries to figure out if we can dynamic link or not. If you insinst on static link alsa set ALSA_STATIC
+
+fn main() {
+    let lib_opt = env("ALSA_LIB_DIR").map(PathBuf::from);
+    let include_opt = env("ALSA_INCLUDE_DIR").map(PathBuf::from);
+
+    match (lib_opt, include_opt) {
+        (Some(_), None) => 
+            panic!("ALSA_LIB_DIR is set but ALSA_INCLUDE_DIR IS not set.\nPlease set both enviroment variables if you want to set the library path without pkg-config"),
+        (None, Some(_)) => 
+            panic!("ALSA_INCLUDE_DIR is set but ALSA_LIB_DIR IS not set.\nPlease set both enviroment variables if you want to set the library path without pkg-config"),
+        (Some(lib_path), Some(include_path)) => 
+            find_alsa_manually(lib_path, include_path),
+        _ => // If all else fails..
+            { pkg_config::find_library("alsa").unwrap(); return; }
+    }
+}
 
 fn env(name: &str) -> Option<OsString> {
     let prefix = env::var("TARGET").unwrap().to_uppercase().replace("-", "_");
@@ -39,17 +55,7 @@ fn env(name: &str) -> Option<OsString> {
     env::var_os(name)
 }
 
-fn main() {
-    let lib_opt = env("ALSA_LIB_DIR").map(PathBuf::from);
-    let include_opt = env("ALSA_INCLUDE_DIR").map(PathBuf::from);
-
-    let (lib_dir, include_dir) = match (lib_opt, include_opt) {
-        (lib_opt.is_some(), include_opt.is_none()) => panic!("ALSA_LIB_DIR is set but ALSA_INCLUDE_DIR IS not set.\nPlease set both enviroment variables if you want to set the library path without pkgcfg"),
-        (lib_opt.is_none(), include_opt.is_some()) => panic!("ALSA_INCLUDE_DIR is set but ALSA_LIB_DIR IS not set.\nPlease set both enviroment variables if you want to set the library path without pkgcfg"),
-        (lib_opt.is_some(), include_opt.is_some()) => (lib_opt.unwrap(), include_opt.unwrap()) // Success!
-        (lib_opt.is_some(), include_opt.is_some()) => { pkg_config::find_library("alsa").unwrap(); return; }
-    }
-
+fn find_alsa_manually(lib_dir: PathBuf, include_dir: PathBuf) {
     println!(
         "cargo:rustc-link-search=native={}",
         lib_dir.to_string_lossy()
